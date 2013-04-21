@@ -9,32 +9,28 @@ module Ris
     def initialize(enumerator)
       @properties = {}
       blank_lines = 0
-      begin
+      while true
         line = enumerator.next
-        while true
-          if line == "\n"
-            blank_lines = blank_lines + 1
-            if blank_lines == 2
-              break
+        if line == "\n"
+        blank_lines = blank_lines + 1
+        if blank_lines == 2
+            break
+          end
+        else
+          key, value = line.split('  - ')
+          if MULTI_VALUED.include?(key)
+            current = @properties[key]
+            if current
+              current << value
+            else
+              @properties[key] = [value]
             end
           else
-            key, value = line.split('  - ')
-            if MULTI_VALUED.include?(key)
-              current = @properties[key]
-              if current
-                current << value
-              else
-                current = [value]
-                @properties[key] = current
-              end
-            else
-              @properties[key] = value
-            end
+            @properties[key] = value
           end
-          line = enumerator.next
         end
-      rescue StopIteration
       end
+      @properties.freeze
     end
     
     def write(fp)
@@ -53,38 +49,36 @@ module Ris
     end
     
     attr_reader :properties
-    
-    def eof?()
-      @properties.empty?
-    end
   end
   
   class RisMerge
-	  def initialize(files, opts={})
-      @files = files
+    def initialize(opts={})
       @entries = {}
       @options = opts
+      @options[:field] ||= "TI"
     end
     
     attr_reader :files, :entries
     
-    def read(key_name)
-      @files.each do |file|
+    def read(files)
+      files.each do |file|
         puts "Reading file [#{file}]" if @options[:verbose]
         enumerator = IO.foreach(file)
         while true
-          entry = RisEntry.new(enumerator)
-          if entry.eof?
+          begin
+            entry = RisEntry.new(enumerator)
+            property = entry.properties[@options[:field]]
+            if property
+              key = property.downcase
+              key.gsub!(/[^a-zA-Z0-9\s]/, "")
+              key.gsub!(/ +/, " ")
+              @entries[key] = entry
+            else
+              puts "No property [#{@options[:field]}] found on a record"
+              p entry.properties
+            end
+          rescue StopIteration
             break
-          end
-          property = entry.properties[key_name]
-          if property
-            key = property.downcase
-            key.gsub!(/[^a-zA-Z0-9\s]/, "")
-            key.gsub!(/ +/, " ")
-            @entries[key] = entry
-          else
-            puts "No property [#{key_name}] found on a record"
           end
         end
       end
@@ -112,9 +106,7 @@ module Ris
 end
 
 if __FILE__ == $0
-  options = {
-    :field => "TI"
-  }
+  options = {}
   OptionParser.new do |opts|
     opts.banner = "Usage: #{$0} [options] <input file(s)>"
     opts.on("-v", "--[no-]verbose", "Run verbosely") {|v| options[:verbose] = v }
@@ -123,8 +115,10 @@ if __FILE__ == $0
     opts.on("-k", "--keyfile keyfile", "Output merged keys") {|o| options[:keyfile] = o }
   end.parse!
 
-  ris_merge = Ris::RisMerge.new(ARGV, options)
-  ris_merge.read(options[:field])
+  files = ARGV
+
+  ris_merge = Ris::RisMerge.new(options)
+  ris_merge.read(files)
   ris_merge.write(options[:output])
   if options[:keyfile]
     ris_merge.write_keys(options[:keyfile])
