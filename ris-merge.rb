@@ -114,12 +114,16 @@ if __FILE__ == $0
     opts.on("-o", "--output output", "Output file") {|o| options[:output] = o }
     opts.on("-k", "--keyfile keyfile", "Output merged keys") {|o| options[:keyfile] = o }
   end.parse!
-
   files = ARGV
 
   ris_merge = Ris::RisMerge.new(options)
+
   ris_merge.read(files)
-  ris_merge.write(options[:output])
+
+  if options[:output]
+    ris_merge.write(options[:output])
+  end
+
   if options[:keyfile]
     ris_merge.write_keys(options[:keyfile])
   end
